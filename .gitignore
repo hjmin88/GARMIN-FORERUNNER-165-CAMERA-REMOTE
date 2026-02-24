@@ -1,0 +1,20 @@
+# Developer signing key
+*.der
+*.pem
+
+# Garmin build output
+garmin_app/bin/
+
+# Android build output
+android_app/.gradle/
+android_app/build/
+android_app/app/build/
+android_app/local.properties
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store

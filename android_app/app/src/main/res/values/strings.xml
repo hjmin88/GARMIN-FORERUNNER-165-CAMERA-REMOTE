@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Camera Remote</string>
+    <string name="accessibility_service_description">
+        Garmin 워치에서 카메라 셔터 명령을 수신하면 화면의 셔터 버튼을 자동으로 클릭합니다.
+        카메라 앱이 전면에 열려 있을 때만 동작합니다.
+    </string>
+</resources>
