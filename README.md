@@ -33,7 +33,7 @@ Garmin Forerunner 165 워치에서 안드로이드 폰의 카메라 셔터를 �
 - Java 17+ (OpenJDK 권장)
 - [Garmin Connect IQ SDK](https://developer.garmin.com/connect-iq/sdk/) 설치
 - Android SDK (API 33)
-- 개발자 서명 키 (`developer_key.der`, PKCS#1 DER 형식)
+- 개발자 서명 키 (`developer_key.der`, PKCS#8 DER 형식)
 
 ## Build
 
@@ -41,7 +41,9 @@ Garmin Forerunner 165 워치에서 안드로이드 폰의 카메라 셔터를 �
 
 ```bash
 # developer_key.der 생성 (최초 1회)
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -outform DER -out developer_key.der
+openssl genrsa -out developer_key.pem 4096
+openssl pkcs8 -topk8 -inform PEM -outform DER -in developer_key.pem -out developer_key.der -nocrypt
+rm developer_key.pem
 
 # 빌드
 monkeyc -d fr165 -f garmin_app/monkey.jungle -o garmin_app/bin/CamRemote.prg -y developer_key.der
