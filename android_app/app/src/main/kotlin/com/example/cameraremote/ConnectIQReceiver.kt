@@ -30,6 +30,9 @@ class ConnectIQReceiver : Service() {
     private var currentDevice: IQDevice? = null
     private val iqApp = IQApp(WATCH_APP_ID)
     private val bench = BenchSender({ connectIQ }, { currentDevice }) { updateNotification(it) }
+    private val still by lazy {
+        StillSender(this, { connectIQ }, { currentDevice }, bench.app) { updateNotification(it) }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -114,7 +117,13 @@ class ConnectIQReceiver : Service() {
         }
         try {
             connectIQ?.registerForAppEvents(device, bench.app) { _, _, messageData, _ ->
-                bench.onMessage(messageData)
+                val msg = messageData?.firstOrNull() as? Map<*, *>
+                if (msg?.get("cmd") == "still") {
+                    val id = (msg["id"] as? Number)?.toInt() ?: 0
+                    still.onRequest(id)
+                } else {
+                    bench.onMessage(messageData)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error registering bench app events", e)

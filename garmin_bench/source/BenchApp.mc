@@ -19,7 +19,7 @@ class BenchApp extends Application.AppBase {
 
     function getInitialView() as [WatchUi.Views] or [WatchUi.Views, WatchUi.InputDelegates] {
         var view = new BenchView();
-        var bench = new Bench(view);
+        var bench = new Bench();
         view.setBench(bench);
         _bench = bench;
         return [view, new BenchDelegate(bench)];
@@ -35,12 +35,12 @@ class BenchDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onSelect() as Boolean {
-        _bench.startIfIdle();
+        _bench.request();
         return true;
     }
 
     function onTap(clickEvent as WatchUi.ClickEvent) as Boolean {
-        _bench.startIfIdle();
+        _bench.request();
         return true;
     }
 }
