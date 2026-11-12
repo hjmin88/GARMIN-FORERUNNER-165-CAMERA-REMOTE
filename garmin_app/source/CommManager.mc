@@ -14,7 +14,11 @@ enum /* AppState */ {
 }
 
 class CommManager {
-    const PHOTO_TIMEOUT_MS = 15000;
+    // No chunk at all this long after the shutter: give up.
+    const FIRST_CHUNK_TIMEOUT_MS = 15000;
+    // Chunks take 2-5 s each (slower while the camera app is open), so a fixed
+    // total cut off slow but healthy transfers. Give up only when they stop.
+    const NEXT_CHUNK_TIMEOUT_MS = 8000;
     const TICK_MS = 250;
 
     var state as Number = STATE_READY;
@@ -24,6 +28,7 @@ class CommManager {
     private var _timer as Timer.Timer or Null;
     private var _nextId as Number = 0;
     private var _shutterAt as Number = 0;
+    private var _lastChunkAt as Number = 0;
 
     function initialize(view as RemoteView) {
         state = STATE_READY;
@@ -66,9 +71,15 @@ class CommManager {
     }
 
     function onTick() as Void {
-        if (state == STATE_WAITING && System.getTimer() - _shutterAt > PHOTO_TIMEOUT_MS) {
-            _stopTimer();
-            state = photo.received > 0 ? STATE_PHOTO : STATE_PHOTO_FAILED;
+        var now = System.getTimer();
+        if (state == STATE_WAITING) {
+            if (photo.received == 0 && now - _shutterAt > FIRST_CHUNK_TIMEOUT_MS) {
+                _stopTimer();
+                state = STATE_PHOTO_FAILED;
+            } else if (photo.received > 0 && now - _lastChunkAt > NEXT_CHUNK_TIMEOUT_MS) {
+                _stopTimer();
+                state = STATE_PHOTO; // shown as "Partial"
+            }
         }
         WatchUi.requestUpdate();
     }
@@ -81,9 +92,12 @@ class CommManager {
         var d = data as Dictionary;
         var t = d.get("t");
         if ("s".equals(t)) {
-            if (state == STATE_WAITING && photo.addChunk(d) && photo.isComplete()) {
-                _stopTimer();
-                state = STATE_PHOTO;
+            if (state == STATE_WAITING && photo.addChunk(d)) {
+                _lastChunkAt = System.getTimer();
+                if (photo.isComplete()) {
+                    _stopTimer();
+                    state = STATE_PHOTO;
+                }
             }
         } else if ("p".equals(t)) {
             if (state == STATE_WAITING && d.get("id") == photo.id) {
