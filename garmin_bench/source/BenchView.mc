@@ -52,10 +52,8 @@ class BenchView extends WatchUi.View {
 
         var ref = b.bitmap;
         if (ref != null && b.frames > 0) {
-            var scale = 200 / c[0];
-            var size = c[0] * scale;
-            dc.drawScaledBitmap(cx - size / 2, h / 2 - size / 2, size, size,
-                                ref.get() as Graphics.BufferedBitmap);
+            var size = c[0] * b.scale;
+            dc.drawBitmap(cx - size / 2, h / 2 - size / 2, ref.get() as Graphics.BufferedBitmap);
         }
 
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);

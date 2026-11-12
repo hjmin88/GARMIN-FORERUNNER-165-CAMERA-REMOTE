@@ -29,6 +29,7 @@ const STALL_MS = 3000;           // re-send ack when no frame arrives this long
 const NO_PHONE_MS = 5000;        // no frame at all in a phase -> show "phone not answering"
 const PIXEL_BUDGET = 2000;       // pixels decoded per tick, to stay under the watchdog
 const UI_REFRESH_MS = 500;       // status/live-stat redraw interval between frames
+const VIEW_PX = 200;             // on-screen preview size; frames are upscaled while decoding
 
 class Bench {
     // [width, height, bitsPerPixel]
@@ -55,6 +56,10 @@ class Bench {
     var phaseStart as Number = 0;
 
     var bitmap as Graphics.BufferedBitmapReference or Null = null;
+    // Integer upscale applied while decoding. Dc.drawScaledBitmap is missing on
+    // FR165 (CIQ 6.0.4 reports "Symbol Not Found"), so the bitmap is built at
+    // display size and drawn with plain drawBitmap.
+    var scale as Number = 1;
     private var _palette as Array<Graphics.ColorType> = [] as Array<Graphics.ColorType>;
 
     private var _view as BenchView;
@@ -129,9 +134,10 @@ class Bench {
         }
         _palette = palette;
         bitmap = null; // release the previous phase's buffer first
+        scale = VIEW_PX / c[0];
         bitmap = Graphics.createBufferedBitmap({
-            :width => c[0],
-            :height => c[1],
+            :width => c[0] * scale,
+            :height => c[1] * scale,
             :palette => palette
         });
         _sendAck(_lastSeq);
@@ -272,6 +278,7 @@ class Bench {
         var bmp = ref.get() as Graphics.BufferedBitmap;
         var dc = bmp.getDc();
         var palette = _palette;
+        var s = scale;
 
         var budget = PIXEL_BUDGET;
         while (_pendingRow < h && budget > 0) {
@@ -287,7 +294,7 @@ class Bench {
                     if (lv != runLevel) {
                         if (runLevel >= 0) {
                             dc.setColor(palette[runLevel], palette[runLevel]);
-                            dc.fillRectangle(runStart, y, x - runStart, 1);
+                            dc.fillRectangle(runStart * s, y * s, (x - runStart) * s, s);
                         }
                         runLevel = lv;
                         runStart = x;
@@ -296,7 +303,7 @@ class Bench {
                 }
             }
             dc.setColor(palette[runLevel], palette[runLevel]);
-            dc.fillRectangle(runStart, y, x - runStart, 1);
+            dc.fillRectangle(runStart * s, y * s, (x - runStart) * s, s);
             _pendingRow += 1;
             budget -= w;
         }
