@@ -40,13 +40,17 @@ class StillSender(
         private const val PIXEL_BUDGET = 9216      // 96x96 class, chosen in stage 1 (1)
         private const val BPP = 4
         private const val CHUNK_RAW_BYTES = 900    // 1200 base64 chars; 1.4 KB arrived, 2.1 KB failed
-        private const val MAX_RETRIES = 2
+        private const val MAX_RETRIES = 1
+        // Garmin Connect sometimes never calls back for a message. Without this
+        // the chain stalled after 2-3 chunks (2026-11-13).
+        private const val CHUNK_TIMEOUT_MS = 3000L
     }
 
     private val worker = HandlerThread("still-encode").apply { start() }
     private val bg = Handler(worker.looper)
     private val main = Handler(Looper.getMainLooper())
     private var activeId = -1
+    private var sendToken = 0
 
     fun onRequest(id: Int) {
         activeId = id
@@ -97,22 +101,29 @@ class StillSender(
             "rows" to rows,
             "px" to Base64.encodeToString(bytes, Base64.NO_WRAP),
         )
+        val token = ++sendToken
+        val sentAt = SystemClock.elapsedRealtime()
+        // Exactly one of callback / timeout advances the chain for this token.
+        fun advance(outcome: String, ok: Boolean) {
+            if (token != sendToken) return
+            sendToken++
+            val now = SystemClock.elapsedRealtime()
+            Log.i(TAG, "still $id chunk ${index + 1}/$total try ${attempt + 1} $outcome " +
+                "${now - sentAt}ms (t=${now - requestedAt}ms)")
+            when {
+                ok -> sendChunk(id, frame, index + 1, 0, requestedAt)
+                attempt < MAX_RETRIES -> sendChunk(id, frame, index, attempt + 1, requestedAt)
+                else -> sendChunk(id, frame, index + 1, 0, requestedAt)
+            }
+        }
+        main.postDelayed({ advance("timeout", false) }, CHUNK_TIMEOUT_MS)
         try {
             c.sendMessage(d, app, payload) { _, _, status ->
-                main.post {
-                    if (status == ConnectIQ.IQMessageStatus.SUCCESS) {
-                        sendChunk(id, frame, index + 1, 0, requestedAt)
-                    } else if (attempt < MAX_RETRIES) {
-                        Log.w(TAG, "still $id chunk $index status $status, retry")
-                        sendChunk(id, frame, index, attempt + 1, requestedAt)
-                    } else {
-                        Log.w(TAG, "still $id chunk $index status $status, skipped")
-                        sendChunk(id, frame, index + 1, 0, requestedAt)
-                    }
-                }
+                main.post { advance(status.toString(), status == ConnectIQ.IQMessageStatus.SUCCESS) }
             }
         } catch (e: Exception) {
             Log.e(TAG, "still $id chunk $index send failed", e)
+            main.post { advance("exception", false) }
         }
     }
 

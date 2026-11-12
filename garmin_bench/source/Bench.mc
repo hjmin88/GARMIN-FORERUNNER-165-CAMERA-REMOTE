@@ -26,7 +26,7 @@ enum StillState {
     STILL_DONE
 }
 
-const TIMEOUT_MS = 15000;        // give up and show what arrived
+const TIMEOUT_MS = 30000;        // measurement only: long enough to see the real total
 const TICK_MS = 200;
 const VIEW_PX = 276;             // largest square inside the 390 px round screen
 const BPP = 4;
@@ -47,6 +47,7 @@ class Bench {
     var drawMs as Number = 0;
     var txErrors as Number = 0;
     var history as Array<String> = [] as Array<String>;
+    private var _seen as Array<Boolean> = [] as Array<Boolean>;
 
     var bitmap as Graphics.BufferedBitmapReference or Null = null;
 
@@ -75,6 +76,7 @@ class Bench {
         drawMs = 0;
         txErrors = 0;
         bitmap = null;
+        _seen = [] as Array<Boolean>;
         startAt = System.getTimer();
         Communications.transmit({ "cmd" => "still", "id" => requestId }, null, new BenchListener(self));
         if (_timer == null) {
@@ -119,6 +121,14 @@ class Bench {
             _allocate(d.get("w") as Number, d.get("h") as Number);
         }
         total = d.get("n") as Number;
+        var idx = d.get("i") as Number;
+        if (_seen.size() != total) {
+            _seen = new Array<Boolean>[total];
+        }
+        if (idx < 0 || idx >= total || _seen[idx] == true) {
+            return; // the phone re-sends a chunk when Garmin Connect never confirms it
+        }
+        _seen[idx] = true;
         var bytes = StringUtil.convertEncodedString(d.get("px") as String, {
             :fromRepresentation => StringUtil.REPRESENTATION_STRING_BASE64,
             :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY
