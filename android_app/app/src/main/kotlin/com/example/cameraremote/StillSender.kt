@@ -57,7 +57,8 @@ class StillSender(
     private val worker = HandlerThread("still-encode").apply { start() }
     private val bg = Handler(worker.looper)
     private val main = Handler(Looper.getMainLooper())
-    private var activeId = -1
+    // Read by the polling worker thread; a newer request must stop an older poll.
+    @Volatile private var activeId = -1
     private var sendToken = 0
 
     /** CamBench: the newest photo in the gallery, whenever it was taken. */
@@ -65,10 +66,10 @@ class StillSender(
 
     /**
      * CamRemote: wait for the photo the camera app saves after the shutter.
-     * Only photos added at or after [shutterAtEpochMs] (minus 1 s clock slack)
-     * qualify, so photos taken on the phone itself are never sent.
+     * Only photos added in or after the shutter's second qualify (DATE_ADDED is
+     * whole seconds, same phone clock), so photos taken earlier are never sent.
      */
-    fun onShutter(id: Int, shutterAtEpochMs: Long) = start(id, shutterAtEpochMs / 1000 - 1)
+    fun onShutter(id: Int, shutterAtEpochMs: Long) = start(id, shutterAtEpochMs / 1000)
 
     private fun start(id: Int, sinceEpochSec: Long?) {
         activeId = id
