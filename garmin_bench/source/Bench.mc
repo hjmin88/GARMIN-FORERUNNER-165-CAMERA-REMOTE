@@ -13,7 +13,8 @@ import Toybox.WatchUi;
 // Protocol:
 //   watch -> phone  {"cmd":"still","id":k}
 //   phone -> watch  {"t":"s","id":k,"i":i,"n":n,"w":W,"h":H,"r0":row,"rows":r,"px":base64}
-// Chunks hold whole rows of 4-bit gray pixels, MSB first. The phone sends the
+// Chunks hold whole rows, run-length coded: one byte per run of 1..16 pixels
+// of one of 16 gray levels. The phone sends the
 // next chunk when the previous send completes; the watch never acks a chunk,
 // because watch->phone messages were often late or lost in stage 0.
 //
@@ -29,7 +30,6 @@ enum StillState {
 const TIMEOUT_MS = 30000;        // measurement only: long enough to see the real total
 const TICK_MS = 200;
 const VIEW_PX = 276;             // largest square inside the 390 px round screen
-const BPP = 4;
 const HISTORY = 5;
 
 class Bench {
@@ -166,8 +166,9 @@ class Bench {
         dc.clear();
     }
 
-    // Paints runs of equal gray as rectangles at fractional scale, so the photo
-    // fills the screen without Dc.drawScaledBitmap (missing on FR165).
+    // Each byte is one run: (level << 4) | (run - 1). Runs never cross rows.
+    // Runs are painted as rectangles at fractional scale, so the photo fills the
+    // screen without Dc.drawScaledBitmap (missing on FR165).
     private function _paintRows(bytes as ByteArray, row0 as Number, rows as Number) as Void {
         var ref = bitmap;
         if (ref == null) {
@@ -175,30 +176,25 @@ class Bench {
         }
         var dc = (ref.get() as Graphics.BufferedBitmap).getDc();
         var w = srcW;
-        var rowBytes = w / 2;
         var palette = _palette;
-        for (var r = 0; r < rows; r++) {
-            var y = row0 + r;
-            var y0 = y * dispH / srcH;
-            var y1 = (y + 1) * dispH / srcH;
-            if (y1 <= y0) {
-                continue;
+        var y = row0;
+        var yEnd = row0 + rows;
+        var x = 0;
+        var y0 = y * dispH / srcH;
+        var y1 = (y + 1) * dispH / srcH;
+        for (var i = 0; i < bytes.size() && y < yEnd; i++) {
+            var b = bytes[i];
+            var run = (b & 0x0F) + 1;
+            if (y1 > y0) {
+                _fill(dc, palette[(b >> 4) & 0x0F], x, x + run, y0, y1);
             }
-            var off = r * rowBytes;
-            var runStart = 0;
-            var runLevel = -1;
-            for (var x = 0; x < w; x++) {
-                var b = bytes[off + x / 2];
-                var lv = (x % 2 == 0) ? ((b >> 4) & 0x0F) : (b & 0x0F);
-                if (lv != runLevel) {
-                    if (runLevel >= 0) {
-                        _fill(dc, palette[runLevel], runStart, x, y0, y1);
-                    }
-                    runLevel = lv;
-                    runStart = x;
-                }
+            x += run;
+            if (x >= w) {
+                x = 0;
+                y += 1;
+                y0 = y1;
+                y1 = (y + 1) * dispH / srcH;
             }
-            _fill(dc, palette[runLevel], runStart, w, y0, y1);
         }
     }
 

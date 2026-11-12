@@ -38,12 +38,11 @@ class StillSender(
     companion object {
         private const val TAG = "StillSender"
         private const val PIXEL_BUDGET = 9216      // 96x96 class, chosen in stage 1 (1)
-        private const val BPP = 4
         private const val CHUNK_RAW_BYTES = 900    // 1200 base64 chars; 1.4 KB arrived, 2.1 KB failed
-        private const val MAX_RETRIES = 1
-        // Garmin Connect sometimes never calls back for a message. Without this
-        // the chain stalled after 2-3 chunks (2026-11-13).
-        private const val CHUNK_TIMEOUT_MS = 3000L
+        // Safety net only: Garmin Connect sometimes never calls back. A short timeout
+        // re-sent chunks that were still in flight (each takes ~2 s) and doubled the
+        // traffic, so wait long and never re-send (2026-11-13).
+        private const val CHUNK_TIMEOUT_MS = 15000L
     }
 
     private val worker = HandlerThread("still-encode").apply { start() }
@@ -57,7 +56,7 @@ class StillSender(
         val requestedAt = SystemClock.elapsedRealtime()
         bg.post {
             val frame = try {
-                latestPhoto()?.let { StillEncoder.encode(it, PIXEL_BUDGET) }
+                latestPhoto()?.let { StillEncoder.encode(it, PIXEL_BUDGET, CHUNK_RAW_BYTES) }
             } catch (e: Exception) {
                 Log.e(TAG, "Encode failed", e)
                 null
@@ -69,17 +68,16 @@ class StillSender(
                     return@post
                 }
                 val prepMs = (SystemClock.elapsedRealtime() - requestedAt).toInt()
-                Log.i(TAG, "still $id ${frame.width}x${frame.height} ${frame.packed.size}B prep ${prepMs}ms")
-                sendChunk(id, frame, 0, 0, requestedAt)
+                Log.i(TAG, "still $id ${frame.width}x${frame.height} ${frame.chunks.sumOf { it.bytes.size }}B " +
+                    "${frame.chunks.size} chunks prep ${prepMs}ms")
+                sendChunk(id, frame, 0, requestedAt)
             }
         }
     }
 
-    private fun sendChunk(id: Int, frame: StillEncoder.Frame, index: Int, attempt: Int, requestedAt: Long) {
+    private fun sendChunk(id: Int, frame: StillEncoder.Frame, index: Int, requestedAt: Long) {
         if (id != activeId) return
-        val rowBytes = frame.width * BPP / 8
-        val rowsPerChunk = max(1, CHUNK_RAW_BYTES / rowBytes)
-        val total = (frame.height + rowsPerChunk - 1) / rowsPerChunk
+        val total = frame.chunks.size
         if (index >= total) {
             val ms = SystemClock.elapsedRealtime() - requestedAt
             onStatus("Still $id sent in ${ms}ms ($total chunks)")
@@ -87,9 +85,7 @@ class StillSender(
         }
         val c = ciq() ?: return
         val d = device() ?: return
-        val row0 = index * rowsPerChunk
-        val rows = minOf(rowsPerChunk, frame.height - row0)
-        val bytes = frame.packed.copyOfRange(row0 * rowBytes, (row0 + rows) * rowBytes)
+        val chunk = frame.chunks[index]
         val payload = mapOf(
             "t" to "s",
             "id" to id,
@@ -97,33 +93,29 @@ class StillSender(
             "n" to total,
             "w" to frame.width,
             "h" to frame.height,
-            "r0" to row0,
-            "rows" to rows,
-            "px" to Base64.encodeToString(bytes, Base64.NO_WRAP),
+            "r0" to chunk.row0,
+            "rows" to chunk.rows,
+            "px" to Base64.encodeToString(chunk.bytes, Base64.NO_WRAP),
         )
         val token = ++sendToken
         val sentAt = SystemClock.elapsedRealtime()
         // Exactly one of callback / timeout advances the chain for this token.
-        fun advance(outcome: String, ok: Boolean) {
+        fun advance(outcome: String) {
             if (token != sendToken) return
             sendToken++
             val now = SystemClock.elapsedRealtime()
-            Log.i(TAG, "still $id chunk ${index + 1}/$total try ${attempt + 1} $outcome " +
+            Log.i(TAG, "still $id chunk ${index + 1}/$total ${chunk.bytes.size}B $outcome " +
                 "${now - sentAt}ms (t=${now - requestedAt}ms)")
-            when {
-                ok -> sendChunk(id, frame, index + 1, 0, requestedAt)
-                attempt < MAX_RETRIES -> sendChunk(id, frame, index, attempt + 1, requestedAt)
-                else -> sendChunk(id, frame, index + 1, 0, requestedAt)
-            }
+            sendChunk(id, frame, index + 1, requestedAt)
         }
-        main.postDelayed({ advance("timeout", false) }, CHUNK_TIMEOUT_MS)
+        main.postDelayed({ advance("timeout") }, CHUNK_TIMEOUT_MS)
         try {
             c.sendMessage(d, app, payload) { _, _, status ->
-                main.post { advance(status.toString(), status == ConnectIQ.IQMessageStatus.SUCCESS) }
+                main.post { advance(status.toString()) }
             }
         } catch (e: Exception) {
             Log.e(TAG, "still $id chunk $index send failed", e)
-            main.post { advance("exception", false) }
+            main.post { advance("exception") }
         }
     }
 
@@ -156,16 +148,20 @@ class StillSender(
     }
 }
 
-/** Grayscale, contrast stretch, aspect-preserving resize, 16 gray levels with dithering. */
+/**
+ * Grayscale, contrast stretch, aspect-preserving resize, 16 gray levels, then
+ * run-length coding per row: one byte = (level << 4) | (run - 1), runs of 1..16.
+ * No dithering: its dot pattern makes runs short and RLE output larger than raw.
+ * Rows are packed into chunks of at most [chunkBytes]; a run never crosses a row.
+ */
 object StillEncoder {
-    class Frame(val width: Int, val height: Int, val packed: ByteArray)
+    class Chunk(val row0: Int, val rows: Int, val bytes: ByteArray)
+    class Frame(val width: Int, val height: Int, val chunks: List<Chunk>)
 
-    fun encode(src: Bitmap, pixelBudget: Int): Frame {
+    fun encode(src: Bitmap, pixelBudget: Int, chunkBytes: Int): Frame {
         val aspect = src.width.toDouble() / src.height
-        var w = sqrt(pixelBudget * aspect).roundToInt()
-        var h = (w / aspect).roundToInt()
-        w -= w % 2 // two 4-bit pixels per byte
-        h = max(1, h)
+        val w = max(2, sqrt(pixelBudget * aspect).roundToInt())
+        val h = max(1, (w / aspect).roundToInt())
         val small = Bitmap.createScaledBitmap(src, w, h, true)
         val px = IntArray(w * h)
         small.getPixels(px, 0, w, 0, 0, w, h)
@@ -175,26 +171,35 @@ object StillEncoder {
             0.299f * ((c shr 16) and 0xFF) + 0.587f * ((c shr 8) and 0xFF) + 0.114f * (c and 0xFF)
         }
         stretch(gray)
+        val level = IntArray(w * h) { (gray[it].coerceIn(0f, 255f) / 255f * 15f).roundToInt() }
 
-        val levels = 15f
-        val packed = ByteArray(w * h / 2)
+        val chunks = ArrayList<Chunk>()
+        val buf = java.io.ByteArrayOutputStream()
+        var chunkRow0 = 0
         for (y in 0 until h) {
-            for (x in 0 until w) {
-                val i = y * w + x
-                val old = gray[i].coerceIn(0f, 255f)
-                val lv = (old / 255f * levels).roundToInt()
-                val err = old - lv * 255f / levels
-                if (x + 1 < w) gray[i + 1] += err * 7 / 16
-                if (y + 1 < h) {
-                    if (x > 0) gray[i + w - 1] += err * 3 / 16
-                    gray[i + w] += err * 5 / 16
-                    if (x + 1 < w) gray[i + w + 1] += err * 1 / 16
-                }
-                val b = i / 2
-                packed[b] = if (i % 2 == 0) (lv shl 4).toByte() else (packed[b].toInt() or lv).toByte()
+            val row = encodeRow(level, y * w, w)
+            if (buf.size() > 0 && buf.size() + row.size > chunkBytes) {
+                chunks.add(Chunk(chunkRow0, y - chunkRow0, buf.toByteArray()))
+                buf.reset()
+                chunkRow0 = y
             }
+            buf.write(row)
         }
-        return Frame(w, h, packed)
+        chunks.add(Chunk(chunkRow0, h - chunkRow0, buf.toByteArray()))
+        return Frame(w, h, chunks)
+    }
+
+    private fun encodeRow(level: IntArray, off: Int, w: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        var x = 0
+        while (x < w) {
+            val lv = level[off + x]
+            var run = 1
+            while (x + run < w && run < 16 && level[off + x + run] == lv) run++
+            out.write((lv shl 4) or (run - 1))
+            x += run
+        }
+        return out.toByteArray()
     }
 
     /** Stretch so the darkest and brightest 1% map to black and white. */
