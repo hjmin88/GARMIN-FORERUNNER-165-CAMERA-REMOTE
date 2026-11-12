@@ -46,6 +46,10 @@ class RemoteView extends WatchUi.View {
                         _commManager.shutterConfirmed ? Rez.Strings.ShutterWorked : Rez.Strings.CheckPhone);
         } else if (currentState == STATE_PHOTO_OFF) {
             drawMessage(dc, cx, cy, Rez.Strings.PhotoAccessOff, Rez.Strings.AllowPhotos);
+        } else if (currentState == STATE_NOT_CAMERA) {
+            drawMessage(dc, cx, cy, Rez.Strings.OpenCamera, Rez.Strings.NothingPressed);
+        } else if (currentState == STATE_SHUTTER_FAILED) {
+            drawMessage(dc, cx, cy, Rez.Strings.ShutterFailed, Rez.Strings.CheckPhone);
         }
     }
 

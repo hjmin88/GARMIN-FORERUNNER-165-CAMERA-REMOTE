@@ -7,4 +7,7 @@
     <string id="CheckPhone">폰을 확인하세요</string>
     <string id="PhotoAccessOff">사진 접근 꺼짐</string>
     <string id="AllowPhotos">폰에서 사진 접근을 허용하세요</string>
+    <string id="OpenCamera">폰에서 카메라 앱을 여세요</string>
+    <string id="NothingPressed">아무것도 누르지 않았어요</string>
+    <string id="ShutterFailed">셔터를 누르지 못함</string>
 </strings>

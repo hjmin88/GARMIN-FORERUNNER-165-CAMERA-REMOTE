@@ -10,7 +10,9 @@ enum /* AppState */ {
     STATE_WAITING,       // shutter sent, photo on its way
     STATE_PHOTO,         // photo shown until the user closes it
     STATE_PHOTO_FAILED,  // no chunk arrived in time
-    STATE_PHOTO_OFF      // phone has no photo permission
+    STATE_PHOTO_OFF,     // phone has no photo permission
+    STATE_NOT_CAMERA,    // phone pressed nothing: a non-camera app is in front
+    STATE_SHUTTER_FAILED // phone could not find or press the shutter
 }
 
 class CommManager {
@@ -58,7 +60,8 @@ class CommManager {
 
     function isShowingPhotoFlow() as Boolean {
         return state == STATE_WAITING || state == STATE_PHOTO
-            || state == STATE_PHOTO_FAILED || state == STATE_PHOTO_OFF;
+            || state == STATE_PHOTO_FAILED || state == STATE_PHOTO_OFF
+            || state == STATE_NOT_CAMERA || state == STATE_SHUTTER_FAILED;
     }
 
     function onTransmitComplete() as Void {
@@ -109,11 +112,14 @@ class CommManager {
             if (id != null && id != photo.id) {
                 return; // answer to an earlier shutter
             }
-            if ("ok".equals(d.get("status"))) {
+            var status = d.get("status");
+            if ("ok".equals(status)) {
                 shutterConfirmed = true;
-            } else {
+            } else if (state == STATE_WAITING) {
+                // The phone answered, so it is connected; it just did not shoot.
                 _stopTimer();
-                state = STATE_NOT_CONNECTED;
+                photo.reset(-1);
+                state = "not_camera".equals(status) ? STATE_NOT_CAMERA : STATE_SHUTTER_FAILED;
             }
         }
         WatchUi.requestUpdate();

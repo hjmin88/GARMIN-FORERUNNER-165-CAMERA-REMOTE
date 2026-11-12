@@ -10,6 +10,8 @@ import Toybox.StringUtil;
 // order or twice; missing ones leave black bands (shown as "Partial").
 class PhotoReceiver {
     const VIEW_PX = 276;         // largest square inside the 390 px round screen
+    const MAX_SIDE = 200;        // the phone sends about 83x111; anything far larger is bogus
+    const MAX_CHUNKS = 64;
 
     var id as Number = -1;
     var received as Number = 0;
@@ -44,13 +46,39 @@ class PhotoReceiver {
     }
 
     // Returns true when the chunk belonged to the current photo and was new.
+    // Malformed chunks are dropped instead of crashing the widget.
     function addChunk(d as Dictionary) as Boolean {
         if (d.get("id") != id) {
             return false;
         }
         var n = d.get("n");
         var i = d.get("i");
-        if (!(n instanceof Number) || !(i instanceof Number) || i < 0 || i >= n) {
+        var w = d.get("w");
+        var h = d.get("h");
+        var r0 = d.get("r0");
+        var rows = d.get("rows");
+        var px = d.get("px");
+        if (!(n instanceof Number) || !(i instanceof Number) || !(w instanceof Number)
+                || !(h instanceof Number) || !(r0 instanceof Number) || !(rows instanceof Number)
+                || !(px instanceof String)) {
+            return false;
+        }
+        if (n < 1 || n > MAX_CHUNKS || i < 0 || i >= n
+                || w < 1 || w > MAX_SIDE || h < 1 || h > MAX_SIDE
+                || r0 < 0 || rows < 1 || r0 + rows > h) {
+            return false;
+        }
+        // Every chunk of one photo must agree with the first accepted one.
+        if (total > 0 && (n != total || w != _srcW || h != _srcH)) {
+            return false;
+        }
+        // Decode before recording anything, so a bad first chunk cannot pin
+        // total/size and make every later chunk look inconsistent.
+        var bytes = StringUtil.convertEncodedString(px, {
+            :fromRepresentation => StringUtil.REPRESENTATION_STRING_BASE64,
+            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY
+        });
+        if (!(bytes instanceof ByteArray)) {
             return false;
         }
         if (_seen.size() != n) {
@@ -61,13 +89,9 @@ class PhotoReceiver {
             return false;
         }
         if (bitmap == null) {
-            _allocate(d.get("w") as Number, d.get("h") as Number);
+            _allocate(w, h);
         }
-        var bytes = StringUtil.convertEncodedString(d.get("px") as String, {
-            :fromRepresentation => StringUtil.REPRESENTATION_STRING_BASE64,
-            :toRepresentation => StringUtil.REPRESENTATION_BYTE_ARRAY
-        }) as ByteArray;
-        _paintRows(bytes, d.get("r0") as Number, d.get("rows") as Number);
+        _paintRows(bytes, r0, rows);
         _seen[i] = true;
         received += 1;
         return true;

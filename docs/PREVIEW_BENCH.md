@@ -45,7 +45,10 @@
 monkeyc -d fr165 -f garmin_bench/monkey.jungle -o garmin_bench/bin/CamBench.prg -y developer_key.der
 ```
 
-- 폰에 동반 앱을 설치하고 사진 접근을 허용합니다.
+- 폰 동반 앱을 측정 기능을 켠 빌드로 설치하고 사진 접근을 허용합니다. 기본 빌드는 CamBench 요청에 응답하지 않습니다(촬영 시점과 무관하게 최신 사진을 보내는 기능이라 꺼 둠).
+  ```bash
+  cd android_app && ./gradlew assembleDebug -Pbench=true
+  ```
 - `CamBench.prg` 를 시계의 `GARMIN/APPS/` 에 복사합니다. FR165는 MTP로 연결되어 Finder에 디스크로 뜨지 않으므로 OpenMTP 같은 앱을 씁니다.
 - 폰 쪽 조각별 시간은 `adb logcat -s StillSender` 로 볼 수 있습니다.
 

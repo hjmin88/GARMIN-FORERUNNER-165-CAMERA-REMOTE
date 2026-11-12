@@ -1,10 +1,15 @@
 package com.example.cameraremote
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
+import android.provider.MediaStore
 import android.graphics.Rect
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+
+/** What happened when the watch asked for a shutter press. */
+enum class ShutterResult { CLICKED, NOT_CAMERA, NOT_FOUND }
 
 class ShutterAccessibilityService : AccessibilityService() {
 
@@ -14,6 +19,15 @@ class ShutterAccessibilityService : AccessibilityService() {
         @Volatile
         var instance: ShutterAccessibilityService? = null
             private set
+
+        // Checked in addition to the apps that declare they take photos, in case a
+        // camera app does not answer the intent query.
+        private val KNOWN_CAMERA_PACKAGES = setOf(
+            "com.sec.android.app.camera",          // Samsung
+            "com.google.android.GoogleCamera",     // Pixel
+            "com.android.camera",
+            "com.android.camera2",
+        )
 
         private val SHUTTER_KEYWORDS = listOf(
             "shutter", "capture", "take photo", "take picture",
@@ -44,21 +58,29 @@ class ShutterAccessibilityService : AccessibilityService() {
      *
      * @return true if a button was found and clicked
      */
-    fun clickShutterButton(): Boolean {
+    fun clickShutterButton(): ShutterResult {
         val rootNode = rootInActiveWindow
         if (rootNode == null) {
             Log.w(TAG, "No active window root node")
-            return false
+            return ShutterResult.NOT_FOUND
         }
 
         try {
+            // Only ever press buttons in a camera app. Both strategies below would
+            // otherwise happily press "Send" or "Pay" in whatever app is in front.
+            val pkg = rootNode.packageName?.toString()
+            if (pkg == null || pkg !in cameraPackages()) {
+                Log.w(TAG, "Foreground app $pkg is not a camera app; not pressing anything")
+                return ShutterResult.NOT_CAMERA
+            }
+
             // Strategy 1: Find by content description
             val byDescription = findByContentDescription(rootNode)
             if (byDescription != null) {
                 Log.d(TAG, "Found shutter by description: '${byDescription.contentDescription}'")
                 val clicked = byDescription.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 byDescription.recycle()
-                return clicked
+                return if (clicked) ShutterResult.CLICKED else ShutterResult.NOT_FOUND
             }
 
             // Strategy 2: Find largest clickable in bottom half
@@ -67,14 +89,23 @@ class ShutterAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Found shutter by heuristic (largest clickable in bottom half)")
                 val clicked = byHeuristic.performAction(AccessibilityNodeInfo.ACTION_CLICK)
                 byHeuristic.recycle()
-                return clicked
+                return if (clicked) ShutterResult.CLICKED else ShutterResult.NOT_FOUND
             }
 
             Log.w(TAG, "Could not find shutter button")
-            return false
+            return ShutterResult.NOT_FOUND
         } finally {
             rootNode.recycle()
         }
+    }
+
+    /** Apps that say they take photos (needs the <queries> entries in the manifest). */
+    private fun cameraPackages(): Set<String> {
+        val pm = packageManager
+        val found = listOf(MediaStore.ACTION_IMAGE_CAPTURE, MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+            .flatMap { action -> pm.queryIntentActivities(Intent(action), 0) }
+            .map { it.activityInfo.packageName }
+        return KNOWN_CAMERA_PACKAGES + found
     }
 
     /**

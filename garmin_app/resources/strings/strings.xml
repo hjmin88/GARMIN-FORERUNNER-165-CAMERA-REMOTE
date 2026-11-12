@@ -7,4 +7,7 @@
     <string id="CheckPhone">Check phone</string>
     <string id="PhotoAccessOff">Photo access off</string>
     <string id="AllowPhotos">Allow photos on phone</string>
+    <string id="OpenCamera">Open camera on phone</string>
+    <string id="NothingPressed">Nothing was pressed</string>
+    <string id="ShutterFailed">Shutter failed</string>
 </strings>

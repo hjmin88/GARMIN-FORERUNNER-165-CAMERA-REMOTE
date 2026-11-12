@@ -8,6 +8,17 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
 
+    <!-- Package visibility (Android 11+): find the apps that take photos, so the
+         shutter is only ever pressed inside a camera app. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE"/>
+        </intent>
+        <intent>
+            <action android:name="android.media.action.STILL_IMAGE_CAMERA"/>
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
