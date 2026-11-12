@@ -9,14 +9,31 @@ class RemoteDelegate extends WatchUi.BehaviorDelegate {
         _view = view;
     }
 
+    // START: shoot, also from a shown photo ("shoot again").
     function onSelect() as Boolean {
         triggerShutter();
         return true;
     }
 
+    // Tap: close the photo (or stop waiting); otherwise shoot.
     function onTap(clickEvent as WatchUi.ClickEvent) as Boolean {
-        triggerShutter();
+        var cm = _view.getCommManager();
+        if (cm != null && cm.isShowingPhotoFlow()) {
+            cm.dismiss();
+        } else {
+            triggerShutter();
+        }
         return true;
+    }
+
+    // BACK: close the photo (or stop waiting); otherwise leave the widget.
+    function onBack() as Boolean {
+        var cm = _view.getCommManager();
+        if (cm != null && cm.isShowingPhotoFlow()) {
+            cm.dismiss();
+            return true;
+        }
+        return false;
     }
 
     private function triggerShutter() as Void {

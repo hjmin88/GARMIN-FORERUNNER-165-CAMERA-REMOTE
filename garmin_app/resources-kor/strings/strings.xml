@@ -1,0 +1,10 @@
+<strings>
+    <string id="AppName">CamRemote</string>
+    <string id="SendingPhoto">사진 받는 중...</string>
+    <string id="Partial">일부만 받음</string>
+    <string id="PhotoNotReceived">사진을 받지 못함</string>
+    <string id="ShutterWorked">셔터는 눌렸어요. 폰에서 확인하세요</string>
+    <string id="CheckPhone">폰을 확인하세요</string>
+    <string id="PhotoAccessOff">사진 접근 꺼짐</string>
+    <string id="AllowPhotos">폰에서 사진 접근을 허용하세요</string>
+</strings>

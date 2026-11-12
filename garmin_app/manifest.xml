@@ -4,7 +4,7 @@
         entry="CameraRemoteApp"
         id="a3421feed289106a538cb9547ab12095"
         launcherIcon="@Drawables.LauncherIcon"
-        minSdkVersion="3.1.0"
+        minSdkVersion="4.0.0"
         name="@Strings.AppName"
         type="widget">
         <iq:products>

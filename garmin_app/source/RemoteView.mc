@@ -37,8 +37,15 @@ class RemoteView extends WatchUi.View {
             drawNotConnected(dc, cx, cy);
         } else if (currentState == STATE_READY) {
             drawReady(dc, cx, cy, h);
-        } else if (currentState == STATE_SENT) {
-            drawSent(dc, cx, cy);
+        } else if (currentState == STATE_WAITING) {
+            drawWaiting(dc, cx, cy, h);
+        } else if (currentState == STATE_PHOTO) {
+            drawPhoto(dc, cx, cy, h);
+        } else if (currentState == STATE_PHOTO_FAILED) {
+            drawMessage(dc, cx, cy, Rez.Strings.PhotoNotReceived,
+                        _commManager.shutterConfirmed ? Rez.Strings.ShutterWorked : Rez.Strings.CheckPhone);
+        } else if (currentState == STATE_PHOTO_OFF) {
+            drawMessage(dc, cx, cy, Rez.Strings.PhotoAccessOff, Rez.Strings.AllowPhotos);
         }
     }
 
@@ -82,15 +89,51 @@ class RemoteView extends WatchUi.View {
                     Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
     }
 
-    private function drawSent(dc as Graphics.Dc, cx as Number, cy as Number) as Void {
-        dc.setColor(Graphics.COLOR_GREEN, Graphics.COLOR_TRANSPARENT);
-        dc.fillCircle(cx, cy, 55);
-
+    // "Sending photo..." until the first chunk, then the photo fills in from the
+    // top with a progress bar under it.
+    private function drawWaiting(dc as Graphics.Dc, cx as Number, cy as Number, h as Number) as Void {
+        var p = (_commManager as CommManager).photo;
+        if (p.received == 0) {
+            dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, cy, Graphics.FONT_SMALL, WatchUi.loadResource(Rez.Strings.SendingPhoto) as String,
+                        Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+            return;
+        }
+        drawBitmapOf(dc, p, cx, cy);
+        var barW = 120;
+        var barY = cy + p.dispH / 2 + 10;
+        dc.setColor(Graphics.COLOR_DK_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.fillRectangle(cx - barW / 2, barY, barW, 6);
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
-        dc.setPenWidth(6);
-        dc.drawLine(cx - 20, cy, cx - 5, cy + 18);
-        dc.drawLine(cx - 5, cy + 18, cx + 22, cy - 15);
-        dc.setPenWidth(1);
+        dc.fillRectangle(cx - barW / 2, barY, barW * p.received / p.total, 6);
+    }
+
+    // Nothing is drawn over the photo. "Partial" goes on the rim below it.
+    private function drawPhoto(dc as Graphics.Dc, cx as Number, cy as Number, h as Number) as Void {
+        var p = (_commManager as CommManager).photo;
+        drawBitmapOf(dc, p, cx, cy);
+        if (!p.isComplete()) {
+            dc.setColor(Graphics.COLOR_ORANGE, Graphics.COLOR_TRANSPARENT);
+            dc.drawText(cx, cy + p.dispH / 2 + 4, Graphics.FONT_XTINY,
+                        WatchUi.loadResource(Rez.Strings.Partial) as String, Graphics.TEXT_JUSTIFY_CENTER);
+        }
+    }
+
+    private function drawBitmapOf(dc as Graphics.Dc, p as PhotoReceiver, cx as Number, cy as Number) as Void {
+        var ref = p.bitmap;
+        if (ref != null) {
+            dc.drawBitmap(cx - p.dispW / 2, cy - p.dispH / 2, ref.get() as Graphics.BufferedBitmap);
+        }
+    }
+
+    private function drawMessage(dc as Graphics.Dc, cx as Number, cy as Number,
+                                 title as ResourceId, detail as ResourceId) as Void {
+        dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy - 15, Graphics.FONT_SMALL, WatchUi.loadResource(title) as String,
+                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
+        dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
+        dc.drawText(cx, cy + 20, Graphics.FONT_XTINY, WatchUi.loadResource(detail) as String,
+                    Graphics.TEXT_JUSTIFY_CENTER | Graphics.TEXT_JUSTIFY_VCENTER);
     }
 
     function getCommManager() as CommManager or Null {

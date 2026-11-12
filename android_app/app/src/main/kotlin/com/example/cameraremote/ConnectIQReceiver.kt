@@ -29,6 +29,14 @@ class ConnectIQReceiver : Service() {
     private var connectIQ: ConnectIQ? = null
     private var currentDevice: IQDevice? = null
     private val iqApp = IQApp(WATCH_APP_ID)
+    private val bench = BenchSender({ connectIQ }, { currentDevice }) { updateNotification(it) }
+    private val still by lazy {
+        StillSender(this, { connectIQ }, { currentDevice }, bench.app) { updateNotification(it) }
+    }
+    // Post-shot photo for the CamRemote widget
+    private val photo by lazy {
+        StillSender(this, { connectIQ }, { currentDevice }, iqApp) { updateNotification(it) }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -83,6 +91,7 @@ class ConnectIQReceiver : Service() {
                         updateNotification("Connected: ${dev.friendlyName}")
                     } else {
                         if (currentDevice == dev) {
+                            bench.stop("Bench stopped: watch disconnected")
                             currentDevice = null
                             updateNotification("Watch disconnected")
                         }
@@ -110,6 +119,19 @@ class ConnectIQReceiver : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Error registering app events", e)
         }
+        try {
+            connectIQ?.registerForAppEvents(device, bench.app) { _, _, messageData, _ ->
+                val msg = messageData?.firstOrNull() as? Map<*, *>
+                if (msg?.get("cmd") == "still") {
+                    val id = (msg["id"] as? Number)?.toInt() ?: 0
+                    still.onRequest(id)
+                } else {
+                    bench.onMessage(messageData)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering bench app events", e)
+        }
     }
 
     private fun handleMessage(messageData: List<Any>?) {
@@ -121,30 +143,38 @@ class ConnectIQReceiver : Service() {
             Log.d(TAG, "Received command: $cmd")
 
             if (cmd == "shutter") {
-                performShutter()
+                // Older widget builds send no id; they get the shutter but no photo.
+                performShutter((first["id"] as? Number)?.toInt())
             }
         }
     }
 
-    private fun performShutter() {
+    private fun performShutter(id: Int?) {
         val a11yService = ShutterAccessibilityService.instance
         if (a11yService == null) {
             Log.w(TAG, "Accessibility service not running")
-            sendResponse("error")
+            sendResponse("error", id)
             return
         }
 
+        val shutterAt = System.currentTimeMillis()
         val success = a11yService.clickShutterButton()
-        sendResponse(if (success) "ok" else "error")
+        sendResponse(if (success) "ok" else "error", id)
+        if (success && id != null) {
+            photo.onShutter(id, shutterAt)
+        }
     }
 
-    private fun sendResponse(status: String) {
+    private fun sendResponse(status: String, id: Int?) {
         val device = currentDevice ?: return
         val ciq = connectIQ ?: return
 
         try {
-            val response = mapOf("status" to status)
-            ciq.sendMessage(device, iqApp, listOf(response)) { _, _, msgStatus ->
+            // A bare map: the watch reads msg.data as a Dictionary. Wrapping it in a
+            // list (as before) meant the watch never saw the status.
+            val response = mutableMapOf<String, Any>("status" to status)
+            if (id != null) response["id"] = id
+            ciq.sendMessage(device, iqApp, response) { _, _, msgStatus ->
                 Log.d(TAG, "Response send status: $msgStatus")
             }
         } catch (e: Exception) {
@@ -195,6 +225,7 @@ class ConnectIQReceiver : Service() {
 
     override fun onDestroy() {
         instance = null
+        bench.stop("Bench stopped: service destroyed")
         try {
             connectIQ?.shutdown(this)
         } catch (e: Exception) {
