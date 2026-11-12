@@ -1,6 +1,13 @@
-# Developer signing key
+# Signing keys and secrets (this repo is public)
 *.der
 *.pem
+*.key
+*.p12
+*.jks
+*.keystore
+.env
+.env.*
+keystore.properties
 
 # Garmin build output
 garmin_app/bin/
