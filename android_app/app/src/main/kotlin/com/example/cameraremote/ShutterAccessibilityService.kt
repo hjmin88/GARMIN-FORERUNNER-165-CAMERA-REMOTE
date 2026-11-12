@@ -20,8 +20,8 @@ class ShutterAccessibilityService : AccessibilityService() {
         var instance: ShutterAccessibilityService? = null
             private set
 
-        // Checked in addition to the apps that declare they take photos, in case a
-        // camera app does not answer the intent query.
+        // Checked in addition to the apps that open as a camera, in case a camera
+        // app does not answer the intent query.
         private val KNOWN_CAMERA_PACKAGES = setOf(
             "com.sec.android.app.camera",          // Samsung
             "com.google.android.GoogleCamera",     // Pixel
@@ -99,11 +99,15 @@ class ShutterAccessibilityService : AccessibilityService() {
         }
     }
 
-    /** Apps that say they take photos (needs the <queries> entries in the manifest). */
+    /**
+     * Apps that open as a camera (STILL_IMAGE_CAMERA; needs the <queries> entry in
+     * the manifest). Not IMAGE_CAPTURE: any app with an in-app photo picker can
+     * handle that (a shopping app did on the test phone), and every screen of such
+     * an app would then count as a camera.
+     */
     private fun cameraPackages(): Set<String> {
-        val pm = packageManager
-        val found = listOf(MediaStore.ACTION_IMAGE_CAPTURE, MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-            .flatMap { action -> pm.queryIntentActivities(Intent(action), 0) }
+        val found = packageManager
+            .queryIntentActivities(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA), 0)
             .map { it.activityInfo.packageName }
         return KNOWN_CAMERA_PACKAGES + found
     }

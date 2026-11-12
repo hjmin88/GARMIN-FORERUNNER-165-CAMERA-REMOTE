@@ -81,7 +81,7 @@ cp garmin_app/bin/CamRemote.prg /Volumes/GARMIN/GARMIN/APPS/
 adb install android_app/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-설치 후 **설정 > 접근성 > Camera Remote** 에서 접근성 서비스를 활성화합니다. 접근성 서비스는 화면 맨 앞 앱이 카메라 앱(사진 촬영을 처리한다고 등록된 앱)일 때만 셔터를 누르고, 다른 앱에서는 아무것도 누르지 않습니다. 앱을 처음 열 때 사진 접근을 허용해야 워치에 사진이 뜹니다(거부하면 셔터만 동작).
+설치 후 **설정 > 접근성 > Camera Remote** 에서 접근성 서비스를 활성화합니다. 접근성 서비스는 화면 맨 앞 앱이 카메라 앱(카메라로 바로 열리도록 등록된 앱)일 때만 셔터를 누르고, 다른 앱에서는 아무것도 누르지 않습니다. 앱을 처음 열 때 사진 접근을 허용해야 워치에 사진이 뜹니다(거부하면 셔터만 동작).
 
 ## Usage
 
