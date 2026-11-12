@@ -1,10 +1,13 @@
 package com.example.cameraremote
 
 import android.content.ContentUris
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -12,6 +15,7 @@ import android.os.SystemClock
 import android.provider.MediaStore
 import android.util.Base64
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.garmin.android.connectiq.ConnectIQ
 import com.garmin.android.connectiq.IQApp
 import com.garmin.android.connectiq.IQDevice
@@ -20,9 +24,12 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
- * Stage-1 still transfer test. On {"cmd":"still","id":k} from the CamBench
- * watch app, takes the newest photo in the gallery, encodes it the way the
- * post-shot preview will, and sends it in row-aligned chunks.
+ * Sends one gallery photo to a watch app as a small gray image in row-aligned
+ * chunks. Used by the CamRemote widget right after its shutter (the photo the
+ * camera app just saved) and by the CamBench test app (the newest photo).
+ *
+ * If no photo can be sent, the watch gets {"t":"p","id":k,"err":"perm"|"none"}
+ * so it can say why instead of waiting for its timeout.
  *
  * Chunks go out one at a time, each after the previous one's send callback.
  * The watch never acks chunks: in stage 0 watch->phone messages were often
@@ -43,6 +50,8 @@ class StillSender(
         // re-sent chunks that were still in flight (each takes ~2 s) and doubled the
         // traffic, so wait long and never re-send (2026-11-13).
         private const val CHUNK_TIMEOUT_MS = 15000L
+        private const val PHOTO_WAIT_MS = 8000L     // camera app saving the shot
+        private const val PHOTO_POLL_MS = 300L
     }
 
     private val worker = HandlerThread("still-encode").apply { start() }
@@ -51,12 +60,27 @@ class StillSender(
     private var activeId = -1
     private var sendToken = 0
 
-    fun onRequest(id: Int) {
+    /** CamBench: the newest photo in the gallery, whenever it was taken. */
+    fun onRequest(id: Int) = start(id, sinceEpochSec = null)
+
+    /**
+     * CamRemote: wait for the photo the camera app saves after the shutter.
+     * Only photos added at or after [shutterAtEpochMs] (minus 1 s clock slack)
+     * qualify, so photos taken on the phone itself are never sent.
+     */
+    fun onShutter(id: Int, shutterAtEpochMs: Long) = start(id, shutterAtEpochMs / 1000 - 1)
+
+    private fun start(id: Int, sinceEpochSec: Long?) {
         activeId = id
         val requestedAt = SystemClock.elapsedRealtime()
+        if (!hasPhotoPermission()) {
+            sendError(id, "perm")
+            return
+        }
         bg.post {
             val frame = try {
-                latestPhoto()?.let { StillEncoder.encode(it, PIXEL_BUDGET, CHUNK_RAW_BYTES) }
+                val uri = if (sinceEpochSec == null) newestImageUri(null) else waitForNewPhoto(id, sinceEpochSec)
+                uri?.let { decode(it) }?.let { StillEncoder.encode(it, PIXEL_BUDGET, CHUNK_RAW_BYTES) }
             } catch (e: Exception) {
                 Log.e(TAG, "Encode failed", e)
                 null
@@ -64,7 +88,7 @@ class StillSender(
             main.post {
                 if (id != activeId) return@post
                 if (frame == null) {
-                    onStatus("Still: no photo or no permission")
+                    sendError(id, "none")
                     return@post
                 }
                 val prepMs = (SystemClock.elapsedRealtime() - requestedAt).toInt()
@@ -119,9 +143,39 @@ class StillSender(
         }
     }
 
-    private fun latestPhoto(): Bitmap? {
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return null
-        val uri = newestImageUri() ?: return null
+    private fun hasPhotoPermission(): Boolean {
+        val perm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_IMAGES
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        return ContextCompat.checkSelfPermission(context, perm) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun sendError(id: Int, err: String) {
+        Log.w(TAG, "still $id not sent: $err")
+        onStatus(if (err == "perm") "Photo access off" else "No new photo")
+        val c = ciq() ?: return
+        val d = device() ?: return
+        try {
+            c.sendMessage(d, app, mapOf("t" to "p", "id" to id, "err" to err)) { _, _, _ -> }
+        } catch (e: Exception) {
+            Log.e(TAG, "still $id error message failed", e)
+        }
+    }
+
+    /** Polls until the camera app has finished saving a photo newer than [sinceEpochSec]. */
+    private fun waitForNewPhoto(id: Int, sinceEpochSec: Long): Uri? {
+        val deadline = SystemClock.elapsedRealtime() + PHOTO_WAIT_MS
+        while (SystemClock.elapsedRealtime() < deadline && id == activeId) {
+            newestImageUri(sinceEpochSec)?.let { return it }
+            SystemClock.sleep(PHOTO_POLL_MS)
+        }
+        return null
+    }
+
+    private fun decode(uri: Uri): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
         val source = ImageDecoder.createSource(context.contentResolver, uri)
         // Decode near 4x the target so the final downscale still averages pixels.
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
@@ -132,12 +186,22 @@ class StillSender(
         }
     }
 
-    private fun newestImageUri(): Uri? {
+    private fun newestImageUri(sinceEpochSec: Long?): Uri? {
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val where = ArrayList<String>()
+        val args = ArrayList<String>()
+        if (sinceEpochSec != null) {
+            where.add("${MediaStore.Images.Media.DATE_ADDED} >= ?")
+            args.add(sinceEpochSec.toString())
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            where.add("${MediaStore.MediaColumns.IS_PENDING} = 0") // still being written
+        }
         context.contentResolver.query(
             collection,
             arrayOf(MediaStore.Images.Media._ID),
-            null, null,
+            where.joinToString(" AND ").ifEmpty { null },
+            args.toTypedArray().ifEmpty { null },
             "${MediaStore.Images.Media.DATE_ADDED} DESC",
         )?.use { cursor ->
             if (cursor.moveToFirst()) {

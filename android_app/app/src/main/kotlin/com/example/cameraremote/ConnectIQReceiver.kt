@@ -33,6 +33,10 @@ class ConnectIQReceiver : Service() {
     private val still by lazy {
         StillSender(this, { connectIQ }, { currentDevice }, bench.app) { updateNotification(it) }
     }
+    // Post-shot photo for the CamRemote widget
+    private val photo by lazy {
+        StillSender(this, { connectIQ }, { currentDevice }, iqApp) { updateNotification(it) }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -139,30 +143,38 @@ class ConnectIQReceiver : Service() {
             Log.d(TAG, "Received command: $cmd")
 
             if (cmd == "shutter") {
-                performShutter()
+                // Older widget builds send no id; they get the shutter but no photo.
+                performShutter((first["id"] as? Number)?.toInt())
             }
         }
     }
 
-    private fun performShutter() {
+    private fun performShutter(id: Int?) {
         val a11yService = ShutterAccessibilityService.instance
         if (a11yService == null) {
             Log.w(TAG, "Accessibility service not running")
-            sendResponse("error")
+            sendResponse("error", id)
             return
         }
 
+        val shutterAt = System.currentTimeMillis()
         val success = a11yService.clickShutterButton()
-        sendResponse(if (success) "ok" else "error")
+        sendResponse(if (success) "ok" else "error", id)
+        if (success && id != null) {
+            photo.onShutter(id, shutterAt)
+        }
     }
 
-    private fun sendResponse(status: String) {
+    private fun sendResponse(status: String, id: Int?) {
         val device = currentDevice ?: return
         val ciq = connectIQ ?: return
 
         try {
-            val response = mapOf("status" to status)
-            ciq.sendMessage(device, iqApp, listOf(response)) { _, _, msgStatus ->
+            // A bare map: the watch reads msg.data as a Dictionary. Wrapping it in a
+            // list (as before) meant the watch never saw the status.
+            val response = mutableMapOf<String, Any>("status" to status)
+            if (id != null) response["id"] = id
+            ciq.sendMessage(device, iqApp, response) { _, _, msgStatus ->
                 Log.d(TAG, "Response send status: $msgStatus")
             }
         } catch (e: Exception) {

@@ -1,3 +1,10 @@
 <strings>
     <string id="AppName">CamRemote</string>
+    <string id="SendingPhoto">Sending photo...</string>
+    <string id="Partial">Partial</string>
+    <string id="PhotoNotReceived">Photo not received</string>
+    <string id="ShutterWorked">Shutter worked. Check phone.</string>
+    <string id="CheckPhone">Check phone</string>
+    <string id="PhotoAccessOff">Photo access off</string>
+    <string id="AllowPhotos">Allow photos on phone</string>
 </strings>
