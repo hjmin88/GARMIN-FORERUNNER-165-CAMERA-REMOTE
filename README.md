@@ -81,7 +81,7 @@ cp garmin_app/bin/CamRemote.prg /Volumes/GARMIN/GARMIN/APPS/
 adb install android_app/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-설치 후 **설정 > 접근성 > Camera Remote** 에서 접근성 서비스를 활성화합니다. 앱을 처음 열 때 사진 접근을 허용해야 워치에 사진이 뜹니다(거부하면 셔터만 동작).
+설치 후 **설정 > 접근성 > Camera Remote** 에서 접근성 서비스를 활성화합니다. 접근성 서비스는 화면 맨 앞 앱이 카메라 앱(사진 촬영을 처리한다고 등록된 앱)일 때만 셔터를 누르고, 다른 앱에서는 아무것도 누르지 않습니다. 앱을 처음 열 때 사진 접근을 허용해야 워치에 사진이 뜹니다(거부하면 셔터만 동작).
 
 ## Usage
 
@@ -101,6 +101,8 @@ adb install android_app/app/build/outputs/apk/debug/app-debug.apk
 | Partial | 사진 + "Partial" | 조각이 8초 넘게 끊겨 일부만 받음 |
 | Photo not received | 문구 | 셔터 후 15초 안에 사진이 오지 않음 |
 | Photo access off | 문구 | 폰 앱에 사진 접근 권한이 없음 |
+| Open camera on phone | 문구 | 폰 화면에 카메라 앱이 떠 있지 않아 아무것도 누르지 않음 |
+| Shutter failed | 문구 | 카메라 앱에서 셔터 버튼을 찾지 못했거나 접근성 서비스가 꺼져 있음 |
 | Not Connected | "No Phone" 표시 | 폰 연결 안 됨 |
 
 사진은 셔터부터 약 10~19초 뒤에 다 뜹니다. 폰에서 카메라 앱이 켜져 있으면 전송이 느려집니다.

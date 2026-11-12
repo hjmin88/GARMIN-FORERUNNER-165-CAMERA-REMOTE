@@ -13,6 +13,12 @@ android {
         targetSdk = 33
         versionCode = 1
         versionName = "1.0"
+        // Test-only handlers for the CamBench watch app (./gradlew assembleDebug -Pbench=true)
+        buildConfigField("boolean", "BENCH_ENABLED", (project.findProperty("bench") == "true").toString())
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {

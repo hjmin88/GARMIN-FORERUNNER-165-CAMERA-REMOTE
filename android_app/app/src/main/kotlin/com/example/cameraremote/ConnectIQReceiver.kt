@@ -119,6 +119,9 @@ class ConnectIQReceiver : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Error registering app events", e)
         }
+        // The CamBench test app can ask for the newest gallery photo regardless of
+        // when it was taken. Only builds made with -Pbench=true answer it.
+        if (!BuildConfig.BENCH_ENABLED) return
         try {
             connectIQ?.registerForAppEvents(device, bench.app) { _, _, messageData, _ ->
                 val msg = messageData?.firstOrNull() as? Map<*, *>
@@ -158,9 +161,14 @@ class ConnectIQReceiver : Service() {
         }
 
         val shutterAt = System.currentTimeMillis()
-        val success = a11yService.clickShutterButton()
-        sendResponse(if (success) "ok" else "error", id)
-        if (success && id != null) {
+        val result = a11yService.clickShutterButton()
+        // "not_camera": nothing was pressed because a non-camera app is in front.
+        sendResponse(when (result) {
+            ShutterResult.CLICKED -> "ok"
+            ShutterResult.NOT_CAMERA -> "not_camera"
+            ShutterResult.NOT_FOUND -> "error"
+        }, id)
+        if (result == ShutterResult.CLICKED && id != null) {
             photo.onShutter(id, shutterAt)
         }
     }
