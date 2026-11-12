@@ -29,6 +29,7 @@ class ConnectIQReceiver : Service() {
     private var connectIQ: ConnectIQ? = null
     private var currentDevice: IQDevice? = null
     private val iqApp = IQApp(WATCH_APP_ID)
+    private val bench = BenchSender({ connectIQ }, { currentDevice }) { updateNotification(it) }
 
     override fun onCreate() {
         super.onCreate()
@@ -83,6 +84,7 @@ class ConnectIQReceiver : Service() {
                         updateNotification("Connected: ${dev.friendlyName}")
                     } else {
                         if (currentDevice == dev) {
+                            bench.stop("Bench stopped: watch disconnected")
                             currentDevice = null
                             updateNotification("Watch disconnected")
                         }
@@ -109,6 +111,13 @@ class ConnectIQReceiver : Service() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error registering app events", e)
+        }
+        try {
+            connectIQ?.registerForAppEvents(device, bench.app) { _, _, messageData, _ ->
+                bench.onMessage(messageData)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error registering bench app events", e)
         }
     }
 
@@ -195,6 +204,7 @@ class ConnectIQReceiver : Service() {
 
     override fun onDestroy() {
         instance = null
+        bench.stop("Bench stopped: service destroyed")
         try {
             connectIQ?.shutdown(this)
         } catch (e: Exception) {

@@ -96,6 +96,12 @@ adb install android_app/app/build/outputs/apk/debug/app-debug.apk
 | Sent | 초록색 체크마크 | 셔터 명령 전송됨 |
 | Not Connected | "No Phone" 표시 | 폰 연결 안 됨 |
 
+## 미리보기 전송 실측 (개발 중)
+
+시계에서 폰 카메라 미리보기를 보는 기능을 검토 중입니다. 먼저 블루투스로 흑백 저해상도 프레임을
+얼마나 빠르게 보낼 수 있는지 측정 전용 앱(`garmin_bench/`)으로 잽니다. 절차는
+[docs/PREVIEW_BENCH.md](docs/PREVIEW_BENCH.md)를 보세요.
+
 ## Credit
 
 This project was built with the help of [Claude Code](https://claude.ai/claude-code).

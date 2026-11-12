@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!-- Stage-0 transfer benchmark. Separate app ID so the shipping CamRemote widget stays untouched. -->
+<iq:manifest xmlns:iq="http://www.garmin.com/xml/connectiq" version="5">
+    <iq:application
+        entry="BenchApp"
+        id="8f4b84a4c51f4258800f4e711eeb8108"
+        launcherIcon="@Drawables.LauncherIcon"
+        minSdkVersion="4.0.0"
+        name="@Strings.AppName"
+        type="watch-app">
+        <iq:products>
+            <iq:product id="fr165"/>
+        </iq:products>
+        <iq:permissions>
+            <iq:uses-permission id="Communications"/>
+        </iq:permissions>
+        <iq:languages>
+            <iq:language>eng</iq:language>
+        </iq:languages>
+        <iq:barrels/>
+    </iq:application>
+</iq:manifest>

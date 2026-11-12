@@ -4,6 +4,7 @@
 
 # Garmin build output
 garmin_app/bin/
+garmin_bench/bin/
 
 # Android build output
 android_app/.gradle/
